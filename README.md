@@ -1,5 +1,9 @@
 # sACN Monitor
 
+[![CI](https://github.com/Tuhis/sacn-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Tuhis/sacn-monitor/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Tuhis/sacn-monitor)](https://github.com/Tuhis/sacn-monitor/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Tuhis/sacn-monitor)](go.mod)
+
 A terminal UI (TUI) application for monitoring sACN/E1.31 traffic during lighting development.
 
 ## Features
