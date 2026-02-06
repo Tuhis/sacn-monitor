@@ -26,16 +26,14 @@ var (
 // Styles
 var (
 	activeCardStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(cyanColor).
-			Padding(0, 1).
-			Width(7)
+			Width(4)
 
 	inactiveCardStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
+				Border(lipgloss.NormalBorder()).
 				BorderForeground(grayColor).
-				Padding(0, 1).
-				Width(7)
+				Width(4)
 
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -147,8 +145,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Calculate columns: each card is ~9 chars wide (7 + spacing)
-		m.columnsPerRow = max(1, (m.width-4)/9)
+		// Calculate columns: each card is ~6 chars wide (4 + border)
+		m.columnsPerRow = max(1, (m.width-2)/6)
 
 	case TickMsg:
 		// Update universe list
@@ -185,7 +183,7 @@ func (m *Model) updateUniverseList() {
 }
 
 func (m Model) View() string {
-	if m.width == 0 {
+	if m.width == 0 || m.height == 0 {
 		return "Loading..."
 	}
 
@@ -268,8 +266,16 @@ func (m Model) renderChannelGrid() string {
 	}
 
 	// Calculate visible rows based on height
-	availableHeight := m.height - 12           // Reserve space for header, tabs, stats, help
-	rowsPerScreen := max(1, availableHeight/4) // Each card row is ~4 lines
+	// Reserve space for: title(2) + tabs(3) + stats(2) + help(2) = 9 lines
+	availableHeight := m.height - 9
+	if availableHeight < 4 {
+		availableHeight = 4
+	}
+	// Each card row is 4 lines tall (border + 2 content + border)
+	rowsPerScreen := availableHeight / 4
+	if rowsPerScreen < 1 {
+		rowsPerScreen = 1
+	}
 
 	startChannel := m.scrollOffset
 	if startChannel >= 512 {
@@ -295,7 +301,7 @@ func (m Model) renderChannelGrid() string {
 				valueStr = fmt.Sprintf("%3d", ch.Value)
 			} else {
 				cardStyle = inactiveCardStyle
-				valueStr = "  ."
+				valueStr = " . "
 			}
 
 			cardContent := fmt.Sprintf("%3d\n%s", channelNum, valueStr)
