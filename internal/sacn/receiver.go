@@ -92,6 +92,7 @@ func (r *Receiver) joinMulticastGroups(startUniverse, endUniverse uint16) {
 
 			if err := r.conn.JoinGroup(&iface, &net.UDPAddr{IP: groupIP}); err != nil {
 				// Silently ignore - some interfaces may not support multicast
+				_ = err
 			}
 		}
 	}

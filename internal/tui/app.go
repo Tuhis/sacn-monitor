@@ -15,12 +15,12 @@ import (
 
 // Colors
 var (
-	cyanColor     = lipgloss.Color("#00FFFF")
-	grayColor     = lipgloss.Color("#666666")
-	darkGrayColor = lipgloss.Color("#333333")
-	whiteColor    = lipgloss.Color("#FFFFFF")
-	yellowColor   = lipgloss.Color("#FFFF00")
-	redColor      = lipgloss.Color("#FF6666")
+	cyanColor = lipgloss.Color("#00FFFF")
+	grayColor = lipgloss.Color("#666666")
+
+	whiteColor  = lipgloss.Color("#FFFFFF")
+	yellowColor = lipgloss.Color("#FFFF00")
+	redColor    = lipgloss.Color("#FF6666")
 )
 
 // Styles
@@ -34,10 +34,6 @@ var (
 				Border(lipgloss.NormalBorder()).
 				BorderForeground(grayColor).
 				Width(4)
-
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(cyanColor)
 
 	statsStyle = lipgloss.NewStyle().
 			Foreground(whiteColor)
