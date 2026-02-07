@@ -246,7 +246,7 @@ func (m Model) renderStats() string {
 
 	info := u.GetInfo()
 	rate := m.statsTracker.GetPacketRate(m.selectedUniverse)
-	loss := m.statsTracker.GetLossPercentage(m.selectedUniverse)
+	loss := m.statsTracker.GetRecentLossPercentage(m.selectedUniverse)
 	activeCount := u.ActiveChannelCount()
 
 	// Format loss with color

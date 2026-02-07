@@ -5,6 +5,21 @@ import (
 	"time"
 )
 
+// Constants for loss tracking
+const (
+	// lossWindowDuration is the time window for recent loss calculation
+	lossWindowDuration = time.Minute
+	// sourceRestartThreshold is the sequence gap above which we assume source restart
+	sourceRestartThreshold = 200
+)
+
+// PacketEvent records a packet reception event for sliding window tracking
+type PacketEvent struct {
+	Timestamp time.Time
+	Received  uint64 // packets received in this event
+	Lost      uint64 // packets lost detected in this event
+}
+
 // Source represents a unique sACN source
 type Source struct {
 	CID          [16]byte
@@ -22,7 +37,8 @@ type UniverseStats struct {
 	PacketCount     uint64
 	LostPackets     uint64
 	LastPacket      time.Time
-	packetsInWindow []time.Time // For rate calculation
+	packetsInWindow []time.Time   // For rate calculation
+	lossWindow      []PacketEvent // For sliding window loss calculation
 	mu              sync.RWMutex
 }
 
@@ -75,8 +91,8 @@ func (t *Tracker) RecordPacket(universeID uint16, sourceCID [16]byte, sourceName
 	stats.packetsInWindow = newWindow
 
 	// Track source
-	source, exists := stats.Sources[sourceCID]
-	if !exists {
+	source, sourceExists := stats.Sources[sourceCID]
+	if !sourceExists {
 		source = &Source{
 			CID:  sourceCID,
 			Name: sourceName,
@@ -85,7 +101,8 @@ func (t *Tracker) RecordPacket(universeID uint16, sourceCID [16]byte, sourceName
 	}
 
 	// Check for packet loss (sequence gap)
-	if exists && source.PacketCount > 0 {
+	var lostThisPacket uint64
+	if sourceExists && source.PacketCount > 0 {
 		expectedSeq := uint8((int(source.LastSequence) + 1) % 256)
 		if sequence != expectedSeq {
 			// Calculate how many packets were lost
@@ -96,10 +113,33 @@ func (t *Tracker) RecordPacket(universeID uint16, sourceCID [16]byte, sourceName
 				// Wrapped around
 				lost = 256 - int(expectedSeq) + int(sequence)
 			}
-			source.LostPackets += uint64(lost)
-			stats.LostPackets += uint64(lost)
+			// If gap is too large, assume source restart rather than massive loss
+			if lost < sourceRestartThreshold {
+				lostThisPacket = uint64(lost)
+				source.LostPackets += lostThisPacket
+				stats.LostPackets += lostThisPacket
+			}
+			// If lost >= sourceRestartThreshold, we treat it as a restart
+			// and don't count any loss
 		}
 	}
+
+	// Record event for sliding window loss tracking
+	stats.lossWindow = append(stats.lossWindow, PacketEvent{
+		Timestamp: now,
+		Received:  1,
+		Lost:      lostThisPacket,
+	})
+
+	// Clean old events from loss window
+	lossCutoff := now.Add(-lossWindowDuration)
+	newLossWindow := stats.lossWindow[:0]
+	for _, evt := range stats.lossWindow {
+		if evt.Timestamp.After(lossCutoff) {
+			newLossWindow = append(newLossWindow, evt)
+		}
+	}
+	stats.lossWindow = newLossWindow
 
 	source.LastSequence = sequence
 	source.LastSeen = now
@@ -140,7 +180,7 @@ func (t *Tracker) GetPacketRate(universeID uint16) float64 {
 	return float64(count) / t.rateWindow.Seconds()
 }
 
-// GetLossPercentage returns packet loss percentage for a universe
+// GetLossPercentage returns cumulative packet loss percentage for a universe
 func (t *Tracker) GetLossPercentage(universeID uint16) float64 {
 	t.mu.RLock()
 	stats := t.universes[universeID]
@@ -159,6 +199,92 @@ func (t *Tracker) GetLossPercentage(universeID uint16) float64 {
 	}
 
 	return float64(stats.LostPackets) / float64(totalExpected) * 100
+}
+
+// GetRecentLossPercentage returns packet loss percentage for the last minute
+func (t *Tracker) GetRecentLossPercentage(universeID uint16) float64 {
+	t.mu.RLock()
+	stats := t.universes[universeID]
+	t.mu.RUnlock()
+
+	if stats == nil {
+		return 0
+	}
+
+	stats.mu.RLock()
+	defer stats.mu.RUnlock()
+
+	// Sum up received and lost from the sliding window
+	now := time.Now()
+	cutoff := now.Add(-lossWindowDuration)
+
+	var totalReceived, totalLost uint64
+	for _, evt := range stats.lossWindow {
+		if evt.Timestamp.After(cutoff) {
+			totalReceived += evt.Received
+			totalLost += evt.Lost
+		}
+	}
+
+	totalExpected := totalReceived + totalLost
+	if totalExpected == 0 {
+		return 0
+	}
+
+	return float64(totalLost) / float64(totalExpected) * 100
+}
+
+// GetSourceLossPercentage returns packet loss percentage for a specific source
+func (t *Tracker) GetSourceLossPercentage(universeID uint16, sourceCID [16]byte) float64 {
+	t.mu.RLock()
+	stats := t.universes[universeID]
+	t.mu.RUnlock()
+
+	if stats == nil {
+		return 0
+	}
+
+	stats.mu.RLock()
+	defer stats.mu.RUnlock()
+
+	source, exists := stats.Sources[sourceCID]
+	if !exists {
+		return 0
+	}
+
+	totalExpected := source.PacketCount + source.LostPackets
+	if totalExpected == 0 {
+		return 0
+	}
+
+	return float64(source.LostPackets) / float64(totalExpected) * 100
+}
+
+// ResetUniverseStats clears all statistics for a specific universe
+func (t *Tracker) ResetUniverseStats(universeID uint16) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if stats, exists := t.universes[universeID]; exists {
+		stats.mu.Lock()
+		stats.PacketCount = 0
+		stats.LostPackets = 0
+		stats.packetsInWindow = nil
+		stats.lossWindow = nil
+		for _, source := range stats.Sources {
+			source.PacketCount = 0
+			source.LostPackets = 0
+		}
+		stats.mu.Unlock()
+	}
+}
+
+// ResetAllStats clears all tracked data
+func (t *Tracker) ResetAllStats() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.universes = make(map[uint16]*UniverseStats)
 }
 
 // GetSources returns all sources for a universe
