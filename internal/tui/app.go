@@ -13,6 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Timeout for considering a universe stale (no data)
+const staleTimeout = time.Second
+
 // Colors
 var (
 	cyanColor = lipgloss.Color("#00FFFF")
@@ -35,6 +38,11 @@ var (
 				BorderForeground(grayColor).
 				Width(4)
 
+	staleCardStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(redColor).
+			Width(4)
+
 	statsStyle = lipgloss.NewStyle().
 			Foreground(whiteColor)
 
@@ -56,6 +64,12 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(grayColor).
 				Padding(0, 1)
+
+	tabStaleStyle = lipgloss.NewStyle().
+			Foreground(redColor).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(redColor).
+			Padding(0, 1)
 
 	helpStyle = lipgloss.NewStyle().
 			Foreground(grayColor)
@@ -193,11 +207,18 @@ func (m Model) View() string {
 		tabs := ""
 		for _, id := range m.universeList {
 			tabText := fmt.Sprintf("Universe %d", id)
-			if id == m.selectedUniverse {
-				tabs += tabActiveStyle.Render(tabText) + " "
+			universe := m.universeManager.Get(id)
+			isStale := universe == nil || universe.IsStale(staleTimeout)
+
+			var style lipgloss.Style
+			if isStale {
+				style = tabStaleStyle
+			} else if id == m.selectedUniverse {
+				style = tabActiveStyle
 			} else {
-				tabs += tabInactiveStyle.Render(tabText) + " "
+				style = tabInactiveStyle
 			}
+			tabs += style.Render(tabText) + " "
 		}
 		s += tabs + "\n\n"
 
@@ -254,6 +275,7 @@ func (m Model) renderChannelGrid() string {
 	}
 
 	channels := u.GetAllChannels()
+	isStale := u.IsStale(staleTimeout)
 
 	var rows []string
 	channelsPerRow := m.columnsPerRow
@@ -292,7 +314,10 @@ func (m Model) renderChannelGrid() string {
 			var cardStyle lipgloss.Style
 			var valueStr string
 
-			if ch.Active {
+			if isStale {
+				cardStyle = staleCardStyle
+				valueStr = " . "
+			} else if ch.Active {
 				cardStyle = activeCardStyle
 				valueStr = fmt.Sprintf("%3d", ch.Value)
 			} else {
